@@ -1,0 +1,84 @@
+﻿@using CRUDTasksWithAgent.Models
+@inject CRUDTasksWithAgent.Services.TaskService TaskService
+@page "/"
+@rendermode InteractiveServer
+
+<PageTitle>Home</PageTitle>
+
+<h1 class="mb-4">Task List</h1>
+
+<div class="mb-3 row g-2 align-items-center">
+    <div class="col-auto">
+        <input class="form-control" value="@newTaskTitle" @oninput="e => newTaskTitle = e.Value?.ToString() ?? string.Empty" @onkeypress="HandleKeyPress" placeholder="Enter task title" />
+    </div>
+    <div class="col-auto">
+        <button class="btn btn-primary" @onclick="AddTask">Add Task</button>
+    </div>
+</div>
+
+@if (tasks.Any())
+{
+    <ul class="list-group mb-3">
+        @foreach (var task in tasks)
+        {
+            <li class="list-group-item d-flex align-items-center justify-content-between">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" checked="@task.IsComplete" @onchange="(e) => OnCompleteChanged(task, e)" id="task-@task.Id" />
+                    <label class="form-check-label" for="task-@task.Id" style="@(task.IsComplete ? "text-decoration: line-through; color: #888;" : "")">
+                        @task.Title
+                    </label>
+                </div>
+                <button class="btn btn-sm btn-danger" @onclick="() => DeleteTask(task)">Delete</button>
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    private string newTaskTitle = string.Empty;
+    private List<TaskItem> tasks = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        tasks = await TaskService.GetAllTasksAsync();
+    }
+
+    private async Task AddTask()
+    {
+        if (!string.IsNullOrWhiteSpace(newTaskTitle))
+        {
+            await TaskService.AddTaskAsync(newTaskTitle);
+            newTaskTitle = string.Empty;
+            tasks = await TaskService.GetAllTasksAsync();
+        }
+    }
+
+    private async Task DeleteTask(TaskItem task)
+    {
+        await TaskService.DeleteTaskAsync(task);
+        tasks = await TaskService.GetAllTasksAsync();
+    }
+
+    private async Task UpdateTask(TaskItem task)
+    {
+        await TaskService.UpdateTaskAsync(task);
+        tasks = await TaskService.GetAllTasksAsync();
+    }
+
+    private async Task OnCompleteChanged(TaskItem task, ChangeEventArgs e)
+    {
+        if (e.Value is bool isComplete)
+        {
+            await TaskService.SetTaskCompletionAsync(task, isComplete);
+            tasks = await TaskService.GetAllTasksAsync();
+        }
+    }
+
+    private async Task HandleKeyPress(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(newTaskTitle))
+        {
+            await AddTask();
+        }
+    }
+}

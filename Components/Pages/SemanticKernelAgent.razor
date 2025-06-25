@@ -1,0 +1,112 @@
+@page "/skagent"
+@using Microsoft.SemanticKernel
+@using Microsoft.SemanticKernel.Agents
+@using Microsoft.SemanticKernel.ChatCompletion
+@using Microsoft.AspNetCore.Components
+@inject CRUDTasksWithAgent.Services.ISemanticKernelAgentProvider AgentProvider
+@inject IJSRuntime JSRuntime
+@inject ILogger<SemanticKernelAgent> Logger
+@rendermode InteractiveServer
+
+@if (!AgentProvider.IsConfigured)
+{
+    <div class="alert alert-warning" role="alert">
+        The Semantic Kernel agent is not configured. Please set the required environment 
+        variables (<code>ModelDeployment</code> and <code>AzureOpenAIEndpoint</code>) 
+        in your appsettings or environment to enable this feature.
+    </div>
+}
+else
+{
+    <div class="container-fluid d-flex flex-column align-items-center justify-content-center" style="height: 100vh;">
+        <div class="card shadow w-100" style="max-width: 600px; height: 80vh; min-height: 400px; display: flex; flex-direction: column;">
+            <div class="card-header bg-primary text-white">
+                <h3 class="mb-0">Semantic Kernel Agent</h3>
+            </div>
+            <div class="card-body flex-grow-1 overflow-auto" id="chatMessages" style="min-height: 0;">
+                @{
+                    AuthorRole? lastRole = null;
+                }
+                @foreach (var message in this.agentThread.ChatHistory)
+                {
+                    if (string.IsNullOrWhiteSpace(message.Content))
+                    {
+                        continue;
+                    }
+                    bool showAvatar = lastRole != message.Role;
+                    if (showAvatar)
+                    {
+                        <div class="my-2 fw-bold d-flex @(message.Role == AuthorRole.User ? "justify-content-end" : "justify-content-start")">
+                            @(message.Role == AuthorRole.User ? "User" : "Agent")
+                        </div>
+                    }
+                    <div class="mb-2 p-2 rounded @((message.Role == AuthorRole.User) ? "bg-primary text-white ms-auto" : "bg-success bg-opacity-10 text-dark me-auto")" style="max-width: 80%; word-break: break-word;">
+                        @if (message.Role == AuthorRole.User)
+                        {
+                            @message.Content
+                        }
+                        else
+                        {
+                            @((MarkupString)message.Content.Replace("\n", "<br />"))
+                        }
+                    </div>
+                    lastRole = message.Role;
+                }
+            </div>
+            <div class="card-footer bg-light">
+                <EditForm Model="this" OnValidSubmit="@(() => SendMessageAsync())" FormName="chatForm">
+                    <div class="input-group">
+                        <InputText @bind-Value="userInput" @onkeypress="@(e => HandleKeyPress(e))" class="form-control" placeholder="Type your message..." />
+                        <button type="submit" class="btn btn-primary">Send</button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private string? userInput;
+    // Maintain an agent thread for each browser session
+    private ChatHistoryAgentThread agentThread = new ();
+    private ChatCompletionAgent? Agent => AgentProvider.Agent;
+
+    // Given the injected Semantic Kernel agent and the thread, simply call Agent.InvokeAsync()
+    // to process the user prompt.
+
+    private async Task SendMessageAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(this.userInput) && this.Agent != null)
+        {
+            var sentInput = this.userInput;
+            this.userInput = string.Empty;
+            StateHasChanged();
+
+            // Send message to agent and get response
+            var message = new ChatMessageContent(AuthorRole.User, sentInput);
+            await foreach (ChatMessageContent response in this.Agent.InvokeAsync(message, this.agentThread))
+            {
+                // Log response
+                Logger.LogInformation("Agent response: {Response}", response.Content);
+            }
+        }
+    }
+
+    private async Task HandleKeyPress(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(this.userInput))
+        {
+            await SendMessageAsync();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await JSRuntime.InvokeVoidAsync("eval", @"
+            var element = document.getElementById('chatMessages');
+            if (element) {
+                element.scrollTop = element.scrollHeight;
+            }
+        ");
+    }
+}
